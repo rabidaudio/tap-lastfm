@@ -1,11 +1,12 @@
 [tool.poetry]
 name = "tap-lastfm"
 version = "0.0.1"
-description = "`tap-lastfm` is a Singer tap for LastFM, built with the Meltano SDK for Singer Taps."
+description = "`tap-lastfm` is a Singer tap for Last.FM, built with the Meltano SDK for Singer Taps."
 authors = ["Charles Julian Knight"]
 keywords = [
     "ELT",
     "LastFM",
+    "last.fm",
 ]
 license = "Apache 2.0"
 

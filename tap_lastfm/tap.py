@@ -5,48 +5,45 @@ from typing import List
 from singer_sdk import Tap, Stream
 from singer_sdk import typing as th  # JSON schema typing helpers
 
-# TODO: Import your custom stream types here:
 from tap_lastfm.streams import (
-    LastFMStream,
+    ScrobblesStream,
     UsersStream,
-    GroupsStream,
 )
-# TODO: Compile a list of custom stream types here
-#       OR rewrite discover_streams() below with your custom logic.
+
 STREAM_TYPES = [
     UsersStream,
-    GroupsStream,
+    ScrobblesStream,
 ]
 
 
 class TapLastFM(Tap):
     """LastFM tap class."""
+
     name = "tap-lastfm"
 
-    # TODO: Update this section with the actual config values you expect:
     config_jsonschema = th.PropertiesList(
         th.Property(
-            "auth_token",
+            "api_key",
             th.StringType,
             required=True,
-            description="The token to authenticate against the API service"
+            description="The API key to authenticate against the API service",
         ),
         th.Property(
-            "project_ids",
+            "usernames",
             th.ArrayType(th.StringType),
             required=True,
-            description="Project IDs to replicate"
+            description="The usernames of users to fetch scrobble data for",
+        ),
+        th.Property(
+            "user_agent",
+            th.StringType,
+            description="The earliest record date to sync",
+            default="tap-lastfm",
         ),
         th.Property(
             "start_date",
             th.DateTimeType,
-            description="The earliest record date to sync"
-        ),
-        th.Property(
-            "api_url",
-            th.StringType,
-            default="https://api.mysample.com",
-            description="The url for the API service"
+            description="The earliest record date to sync",
         ),
     ).to_dict()
 

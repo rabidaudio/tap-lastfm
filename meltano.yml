@@ -5,22 +5,21 @@ plugins:
   extractors:
   - name: tap-lastfm
     namespace: tap_lastfm
-    # TODO: To test using Meltano, replace with absolute path
-    #       to the tap-lastfm.sh script:
     executable: ./tap-lastfm.sh
     capabilities:
     - state
     - catalog
     - discover
     config:
-      start_date: '2010-01-01T00:00:00Z'
+      api_key: $TAP_LASTFM_API_KEY
     settings:
-    # TODO: To configure using Meltano, declare settings and their types here:
-    - name: username
-    - name: password
+    - name: api_key
       kind: password
+    - name: usernames
+    - name: user_agent
     - name: start_date
       value: '2010-01-01T00:00:00Z'
+    
   loaders:
   - name: target-jsonl
     variant: andyh1203

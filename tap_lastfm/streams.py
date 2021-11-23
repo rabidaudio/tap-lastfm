@@ -2,18 +2,28 @@
 
 from typing import Any, Dict, Iterator, Optional
 import requests
-from datetime import datetime
+import pendulum
+from pendulum.datetime import DateTime
+from urllib import parse
 
 from singer_sdk import typing as th  # JSON Schema typing helpers
 
 from tap_lastfm.client import LastFMStream
-from tap_lastfm.property_stream import PropertiesList, Property
+from tap_lastfm.property_stream import Property
 
 IMAGE_SIZES = ["small", "medium", "large", "extralarge"]
 
 
-def blank_to_null(v: Any) -> Any:
+def blank_to_null(v: Any) -> Any:  # noqa: D103
     return v or None
+
+
+def get_query_params(request: requests.PreparedRequest) -> dict:
+    """Parse a param dictionary from a request object."""
+    return {
+        k: v[0]
+        for k, v in parse.parse_qs(str(parse.urlparse(request.url).query)).items()
+    }
 
 
 class UsersStream(LastFMStream):
@@ -26,7 +36,7 @@ class UsersStream(LastFMStream):
     replication_method = "FULL_TABLE"
     records_jsonpath = "$.user"
 
-    properties = PropertiesList(
+    properties = th.PropertiesList(
         Property("name", th.StringType),
         Property("realname", th.StringType),
         Property("url", th.StringType),
@@ -50,7 +60,7 @@ class UsersStream(LastFMStream):
             "registered_at",
             th.DateTimeType,
             jsonpath_selector='$.registered["#text"]',
-            cast=datetime.fromtimestamp,
+            cast=pendulum.from_timestamp,
         ),
         Property(
             "image",
@@ -68,26 +78,34 @@ class UsersStream(LastFMStream):
     )
 
     def __init__(self, *args, **kwargs):
+        """Construct a UsersStream."""
         super().__init__(*args, **kwargs)
         self._usernames_iterator: Iterator[str] = iter(self.config["usernames"])
 
     def get_next_username(self) -> Optional[str]:
+        """Return the next username from the list of usernames in the config."""
         return next(self._usernames_iterator, None)
 
     def get_next_page_token(
         self, response: requests.Response, previous_token: Optional[Any]
     ) -> Optional[Any]:
+        """Return a token for identifying next page or None if no more pages."""
         return self.get_next_username()
 
     def get_url_params(
         self, context: Optional[dict], next_page_token: Optional[Any]
     ) -> Dict[str, Any]:
+        """Return a dictionary of values to be used in URL parameterization."""
         return {
             **super().get_url_params(context, next_page_token),
             "user": next_page_token or self.get_next_username(),
         }
 
     def get_child_context(self, record: dict, context: Optional[dict]) -> dict:
+        """Create a context for child streams to use.
+
+        Contains both the username of the user and the date they registered.
+        """
         return {
             "username": record["name"],
             "registered_at": record["registered_at"],
@@ -99,7 +117,7 @@ class ScrobblesStream(LastFMStream):
 
     name = "scrobbles"
     method = "user.getRecentTracks"
-    primary_keys = ["date", "name", "artist_name"]
+    primary_keys = ["date", "name"]
     replication_key = "date"
     parent_stream_type = UsersStream
     ignore_parent_replication_key = True
@@ -107,7 +125,7 @@ class ScrobblesStream(LastFMStream):
     records_jsonpath = "$.recenttracks.track[*]"
     total_pages_jsonpath = '$.recenttracks["@attr"].totalPages'
     is_sorted = False  # annoyingly only searches in reverse order
-    properties = PropertiesList(
+    properties = th.PropertiesList(
         Property("name", th.StringType, description="The name of the track"),
         Property(
             "mbid",
@@ -123,8 +141,9 @@ class ScrobblesStream(LastFMStream):
             th.DateTimeType,
             description="The time the track was listened to (scrobbled)",
             jsonpath_selector="$.date.uts",
-            cast=lambda x: datetime.fromtimestamp(int(x)),
+            cast=lambda x: pendulum.from_timestamp(int(x)),
         ),
+        Property("username", th.StringType),
         Property(
             "artist",
             th.ObjectType(
@@ -180,16 +199,71 @@ class ScrobblesStream(LastFMStream):
         ),
     )
 
+    def _start_time(self, context: dict) -> DateTime:
+        start_at = self.get_starting_timestamp(context)
+        if not start_at:
+            start_at = context["registered_at"]
+        if context["registered_at"] > start_at:
+            start_at = context["registered_at"]
+        return start_at
+
+    def _page_token_for(self, start: DateTime, page: int) -> dict:
+        return {
+            "from": str(int(start.timestamp())),
+            "to": str(int(start.add(days=self.config["step_days"]).timestamp())),
+            "page": page,
+        }
+
+    def get_next_page_token(
+        self,
+        response: requests.Response,
+        previous_token: Optional[Any],
+    ) -> Optional[Any]:
+        """Return a token for identifying next page or None if no more pages."""
+        req_params = get_query_params(response.request)
+        prev_page = previous_token["page"] if previous_token else None
+        next_page = super().get_next_page_token(response, prev_page)
+        if next_page:
+            return {
+                "from": req_params["from"],
+                "to": req_params["to"],
+                "page": next_page,
+            }
+        new_start = pendulum.from_timestamp(int(req_params["to"]))
+        if new_start > pendulum.now():
+            return None
+        self.finalize_state_progress_markers()  # emit state
+        return self._page_token_for(new_start, page=1)
+
     def get_url_params(
         self, context: Optional[dict], next_page_token: Optional[Any]
     ) -> Dict[str, Any]:
-        params = {
-            **super().get_url_params(context, next_page_token),
+        """Return a dictionary of values to be used in URL parameterization."""
+        if not next_page_token:
+            start_time = self._start_time(context)
+            next_page_token = self._page_token_for(start_time, 1)
+        self.logger.debug(
+            f"fetching scrobbles for [{context['username']}] "
+            f"from {next_page_token['from']} -> {next_page_token['to']} "
+            f"page:{next_page_token['page']}"
+        )
+        return {
+            **super().get_url_params(context, None),
+            **next_page_token,
             "extended": "1",
             "limit": "200",
         }
-        start_at = self.get_starting_timestamp(context) or context["registered_at"]
-        if start_at:
-            params["from"] = str(int(start_at.timestamp()))
 
-        return params
+    def post_process(
+        self, row: Dict[str, Any], context: Optional[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """As needed, append or transform raw data to match expected structure."""
+        # add the username from context as it isn't in the response body
+        row["username"] = context["username"]
+        return super().post_process(row, context)
+
+
+# FriendsStream
+# LovedTracksStream
+# AlbumStream
+# ArtistStream

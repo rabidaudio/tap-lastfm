@@ -45,6 +45,12 @@ class TapLastFM(Tap):
             th.DateTimeType,
             description="The earliest record date to sync",
         ),
+        th.Property(
+            "step_days",
+            th.IntegerType,
+            description="The number of days to scan through before emitting state",
+            default=30,
+        ),
     ).to_dict()
 
     def discover_streams(self) -> List[Stream]:

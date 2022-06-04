@@ -1,6 +1,7 @@
 """Base Stream type which declares more powerful properties."""
 
 from typing import Any, Callable, Generic, List, Optional, Tuple, Type, Union, cast
+from xmlrpc.client import Boolean
 
 from jsonpath_ng.ext import parse as jsonpath_parse
 from singer_sdk import typing as th  # JSON Schema typing helpers
@@ -16,6 +17,7 @@ class Property(th.Property, Generic[th.W]):
         wrapped: Union[th.W, Type[th.W]],
         jsonpath_selector: str = None,
         cast: Callable[[Any], Any] = lambda x: x,
+        ignore_missing: Boolean = False,
         **kwargs,
     ) -> None:
         """Construct a new Property.
@@ -28,6 +30,8 @@ class Property(th.Property, Generic[th.W]):
                 name of the property.
             cast: A lambda or method to convert the json value to the expected
                 type. Defaults to a no-op.
+            ignore_missing: If the property is not included in the data, ignore it
+                and set to `None`. Defaults to `False`.
             kwargs: The rest of the arguments are consistent with the parent class.
 
         """
@@ -35,6 +39,7 @@ class Property(th.Property, Generic[th.W]):
         self.jsonpath_selector = jsonpath_selector or f'$["{name}"]'
         self._selector = jsonpath_parse(self.jsonpath_selector)
         self.cast = cast
+        self.ignore_missing = ignore_missing
 
     def read_value(self, row: dict) -> Optional[Any]:
         """Read and cast the value from the row.
@@ -63,6 +68,8 @@ class Property(th.Property, Generic[th.W]):
         try:
             return self.cast(value[0].value)
         except IndexError as e:
+            if self.ignore_missing:
+                return None
             raise Exception(
                 f"Unable to find property '{self.name}' ",
                 f"at jsonpath '{self.jsonpath_selector}'.",

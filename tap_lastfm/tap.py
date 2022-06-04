@@ -34,7 +34,7 @@ class TapLastFM(Tap):
         th.Property(
             "user_agent",
             th.StringType,
-            description="The earliest record date to sync",
+            description="Passed to the API to identify the tool requesting data",
             default="tap-lastfm",
         ),
         th.Property(

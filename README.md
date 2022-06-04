@@ -5,18 +5,18 @@
 Built with the [Meltano Tap SDK](https://sdk.meltano.com) for Singer Taps.
 
 ## Installation
-
-- [ ] `Developer TODO:` Update the below as needed to correctly describe the install procedure. For instance, if you do not have a PyPi repo, or if you want users to directly install from your git repo, you can modify this step as appropriate.
-
 ```bash
-pipx install tap-lastfm
+pipx install git+https://github.com/rabidaudio/tap-lastfm.git@v0.1.0
 ```
 
 ## Configuration
 
 ### Accepted Config Options
 
-- [ ] `Developer TODO:` Provide a list of config options accepted by the tap.
+- `api_key` (required): The API key to authenticate against the API service.
+- `usernames` (required): A list of usernames to fetch data for.
+- `start_date`: The earliest record date to sync. Defaults to all data.
+- `step_days`: The number of days to scan through before emitting state. Defaults to 30.
 
 A full list of supported settings and capabilities for this
 tap is available by running:
@@ -27,7 +27,7 @@ tap-lastfm --about
 
 ### Source Authentication and Authorization
 
-- [ ] `Developer TODO:` If your tap requires special access on the source system, or any special authentication requirements, provide those here.
+Last.fm requires an API key even to read public data. [See directions on how to request an API key here.](https://www.last.fm/api/authentication). At this time, the tap does not access any non-public data, so signatures and session keys are not required.
 
 ## Usage
 
@@ -43,7 +43,7 @@ tap-lastfm --config CONFIG --discover > ./catalog.json
 
 ## Developer Resources
 
-- [ ] `Developer TODO:` As a first step, scan the entire project for the text "`TODO:`" and complete any recommended steps, deleting the "TODO" references once completed.
+- Last.FM API docs: https://www.last.fm/api
 
 ### Initialize your Development Environment
 
@@ -58,7 +58,7 @@ Create tests within the `tap_lastfm/tests` subfolder and
   then run:
 
 ```bash
-poetry run pytest
+tox -e pytest
 ```
 
 You can also test the `tap-lastfm` CLI interface directly using `poetry run`:

@@ -1,6 +1,6 @@
 """Stream type classes for tap-lastfm."""
 
-from typing import Any, Dict, Iterator, Optional
+from typing import Any, Dict, Iterator, List, Optional
 from urllib import parse
 
 import pendulum
@@ -18,6 +18,14 @@ def blank_to_null(v: Any) -> Any:  # noqa: D103
     return v or None
 
 
+def str_to_int(v: str) -> Optional[int]:  # noqa: D103
+    return None if v == "" else int(v)
+
+
+def int_to_bool(v: str) -> bool:  # noqa: D103
+    return bool(int(v))
+
+
 def get_query_params(request: requests.PreparedRequest) -> dict:
     """Parse a param dictionary from a request object."""
     return {
@@ -26,55 +34,62 @@ def get_query_params(request: requests.PreparedRequest) -> dict:
     }
 
 
+USER_PROPERTIES: List[Property] = [
+    Property("realname", th.StringType),
+    Property("url", th.StringType),
+    Property("country", th.StringType, description="2-letter country code"),
+    Property(
+        "age",
+        th.IntegerType,
+        cast=lambda v: None if v == "0" else int(v),
+        ignore_missing=True,
+    ),
+    Property(
+        "gender",
+        th.StringType,
+        description="one of 'm', 'f'",
+        cast=lambda v: None if v == "n" else v,
+        ignore_missing=True,
+    ),
+    Property("subscriber", th.BooleanType, cast=int_to_bool),
+    Property("playcount", th.IntegerType, cast=str_to_int),
+    Property("playlists", th.IntegerType, cast=str_to_int),
+    Property("bootstrap", th.BooleanType, cast=int_to_bool),
+    Property(
+        "registered_at",
+        th.DateTimeType,
+        jsonpath_selector='$.registered["unixtime"]',
+        cast=lambda v: pendulum.from_timestamp(int(v)),
+    ),
+    Property(
+        "image",
+        th.ObjectType(
+            *[
+                Property(
+                    size,
+                    th.StringType,
+                    jsonpath_selector=f'$.image[?size="{size}"]["#text"]',
+                )
+                for size in IMAGE_SIZES
+            ]
+        ),
+    ),
+]
+
+
 class UsersStream(LastFMStream):
     """Stream of user account info."""
 
     name = "users"
     method = "user.getinfo"
-    primary_keys = ["name"]
+    primary_keys = ["username"]
     replication_key = None
     replication_method = "FULL_TABLE"
     records_jsonpath = "$.user"
 
     properties = th.PropertiesList(
-        Property("name", th.StringType),
-        Property("realname", th.StringType),
-        Property("url", th.StringType),
-        Property("country", th.StringType, description="2-letter country code"),
-        Property(
-            "age",
-            th.IntegerType,
-            cast=lambda v: None if v == 0 else v,
-        ),
-        Property(
-            "gender",
-            th.StringType,
-            description="one of 'm', 'f'",
-            cast=lambda v: None if v == "n" else v,
-        ),
-        Property("subscriber", th.BooleanType),  # cast=bool
-        Property("playcount", th.IntegerType),
-        Property("playlists", th.IntegerType),
-        Property("bootstrap", th.BooleanType),
-        Property(
-            "registered_at",
-            th.DateTimeType,
-            jsonpath_selector='$.registered["#text"]',
-            cast=pendulum.from_timestamp,
-        ),
-        Property(
-            "image",
-            th.ObjectType(
-                *[
-                    Property(
-                        size,
-                        th.StringType,
-                        jsonpath_selector=f'$.image[?size="{size}"]["#text"]',
-                    )
-                    for size in IMAGE_SIZES
-                ]
-            ),
-        ),
+        Property("username", th.StringType, jsonpath_selector="$.name"),
+        *USER_PROPERTIES,
     )
 
     def __init__(self, *args, **kwargs):
@@ -107,21 +122,33 @@ class UsersStream(LastFMStream):
         Contains both the username of the user and the date they registered.
         """
         return {
-            "username": record["name"],
+            "username": record["username"],
             "registered_at": record["registered_at"],
         }
 
 
-class ScrobblesStream(LastFMStream):
+class UserChildStream(LastFMStream):
+    """Base stream which is a child stream of users."""
+
+    parent_stream_type = UsersStream
+    ignore_parent_replication_key = True
+    state_partitioning_keys = ["username"]
+
+    def post_process(self, row: dict, context: Optional[dict] = None) -> Optional[dict]:
+        """As needed, append or transform raw data to match expected structure."""
+        # add the username from context as it isn't in the response body
+        assert context is not None
+        row["username"] = context["username"]
+        return super().post_process(row, context)
+
+
+class ScrobblesStream(UserChildStream):
     """Stream of scrobbles (plays)."""
 
     name = "scrobbles"
     method = "user.getRecentTracks"
     primary_keys = ["date", "name"]
     replication_key = "date"
-    parent_stream_type = UsersStream
-    ignore_parent_replication_key = True
-    state_partitioning_keys = ["username"]
     records_jsonpath = "$.recenttracks.track[*]"
     total_pages_jsonpath = '$.recenttracks["@attr"].totalPages'
     is_sorted = False  # annoyingly only searches in reverse order
@@ -134,8 +161,8 @@ class ScrobblesStream(LastFMStream):
             cast=blank_to_null,
         ),
         Property("url", th.StringType),
-        Property("streamable", th.BooleanType),
-        Property("loved", th.BooleanType),
+        Property("streamable", th.BooleanType, cast=int_to_bool),
+        Property("loved", th.BooleanType, cast=int_to_bool),
         Property(
             "date",
             th.DateTimeType,
@@ -256,15 +283,33 @@ class ScrobblesStream(LastFMStream):
             "limit": "200",
         }
 
-    def post_process(self, row: dict, context: Optional[dict] = None) -> Optional[dict]:
-        """As needed, append or transform raw data to match expected structure."""
-        # add the username from context as it isn't in the response body
-        assert context is not None
-        row["username"] = context["username"]
-        return super().post_process(row, context)
 
+# TODO: it would make more sense to emit a row on the users stream, then
+# make the friends stream a simple join table. However, the SDK doesn't
+# allow this sort of imperative behavior.
+# class FriendsStream(UserChildStream):
+#     """Stream of friends of the user."""
 
-# FriendsStream
-# LovedTracksStream
-# AlbumStream
-# ArtistStream
+#     name = "friends"
+#     method = "user.getFriends"
+#     primary_keys = ["username", "friend_username"]
+#     records_jsonpath = "$.friends.user[*]"
+#     total_pages_jsonpath = '$.friends["@attr"].totalPages'
+#     is_sorted = False
+#     replication_method = "FULL_TABLE"
+#     properties = th.PropertiesList(
+#         Property("username", th.StringType),
+#         Property("friend_username", th.StringType, jsonpath_selector="$.name"),
+#         *USER_PROPERTIES,
+#     )
+
+#     def get_url_params(
+#         self, context: Optional[dict], next_page_token: Optional[Any]
+#     ) -> Dict[str, Any]:
+#         return {
+#             **super().get_url_params(context, None),
+#             "recenttracks": "0",
+#             "limit": "200",
+#         }
+
+# LovedTracksStream - requires some manual incremental logic

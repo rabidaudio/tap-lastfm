@@ -1,11 +1,11 @@
 """Stream type classes for tap-lastfm."""
 
 from typing import Any, Dict, Iterator, Optional
-import requests
-import pendulum
-from pendulum.datetime import DateTime
 from urllib import parse
 
+import pendulum
+import requests
+from pendulum.datetime import DateTime
 from singer_sdk import typing as th  # JSON Schema typing helpers
 
 from tap_lastfm.client import LastFMStream
@@ -205,7 +205,8 @@ class ScrobblesStream(LastFMStream):
             start_at = context["registered_at"]
         if context["registered_at"] > start_at:
             start_at = context["registered_at"]
-        return start_at
+        assert start_at is not None
+        return pendulum.instance(start_at)
 
     def _page_token_for(self, start: DateTime, page: int) -> dict:
         return {
@@ -239,6 +240,7 @@ class ScrobblesStream(LastFMStream):
         self, context: Optional[dict], next_page_token: Optional[Any]
     ) -> Dict[str, Any]:
         """Return a dictionary of values to be used in URL parameterization."""
+        assert context is not None
         if not next_page_token:
             start_time = self._start_time(context)
             next_page_token = self._page_token_for(start_time, 1)
@@ -254,11 +256,10 @@ class ScrobblesStream(LastFMStream):
             "limit": "200",
         }
 
-    def post_process(
-        self, row: Dict[str, Any], context: Optional[Dict[str, Any]]
-    ) -> Dict[str, Any]:
+    def post_process(self, row: dict, context: Optional[dict] = None) -> Optional[dict]:
         """As needed, append or transform raw data to match expected structure."""
         # add the username from context as it isn't in the response body
+        assert context is not None
         row["username"] = context["username"]
         return super().post_process(row, context)
 

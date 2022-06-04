@@ -1,10 +1,11 @@
 """REST client handling, including LastFMStream base class."""
 
-import requests
 from typing import Any, Dict, Optional
 
+import requests
 from singer_sdk.authenticators import APIKeyAuthenticator
 from singer_sdk.helpers.jsonpath import extract_jsonpath
+
 from tap_lastfm.property_stream import PropertyStream
 
 

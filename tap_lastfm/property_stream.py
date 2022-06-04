@@ -1,19 +1,8 @@
 """Base Stream type which declares more powerful properties."""
 
-from typing import (
-    Any,
-    Callable,
-    Dict,
-    Generic,
-    List,
-    Optional,
-    Tuple,
-    Type,
-    Union,
-    cast,
-)
-from jsonpath_ng.ext import parse as jsonpath_parse
+from typing import Any, Callable, Generic, List, Optional, Tuple, Type, Union, cast
 
+from jsonpath_ng.ext import parse as jsonpath_parse
 from singer_sdk import typing as th  # JSON Schema typing helpers
 from singer_sdk.streams.rest import RESTStream
 
@@ -101,9 +90,7 @@ class PropertyStream(RESTStream):
         """
         return self.properties.to_dict()
 
-    def post_process(
-        self, row: Dict[str, Any], context: Optional[dict]
-    ) -> Dict[str, Any]:
+    def post_process(self, row: dict, context: Optional[dict] = None) -> Optional[dict]:
         """Remap and cast properties by jsonpath."""
         props = cast(List[Tuple[str, Property]], self.properties.items())
         return {k: p.read_value(row) for k, p in props}

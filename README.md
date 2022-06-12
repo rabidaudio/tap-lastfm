@@ -6,7 +6,7 @@ Built with the [Meltano Tap SDK](https://sdk.meltano.com) for Singer Taps.
 
 ## Installation
 ```bash
-pipx install git+https://github.com/rabidaudio/tap-lastfm.git@v0.1.0
+pipx install git+https://github.com/rabidaudio/tap-lastfm.git@v0.1.1
 ```
 
 ## Configuration

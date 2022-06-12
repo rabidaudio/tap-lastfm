@@ -283,6 +283,14 @@ class ScrobblesStream(UserChildStream):
             "limit": "200",
         }
 
+    def post_process(self, row: dict, context: Optional[dict] = None) -> Optional[dict]:
+        """As needed, append or transform raw data to match expected structure."""
+        # When nowplaying=True, the scrobble does not have a date, so skip
+        # any nowplaying tracks
+        if row.get("@attr", {}).get("nowplaying") == "true":
+            return None
+        return super().post_process(row, context)
+
 
 # TODO: it would make more sense to emit a row on the users stream, then
 # make the friends stream a simple join table. However, the SDK doesn't

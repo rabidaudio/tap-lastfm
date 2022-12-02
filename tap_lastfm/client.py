@@ -1,9 +1,11 @@
 """REST client handling, including LastFMStream base class."""
 
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional
 
+import backoff
 import requests
 from singer_sdk.authenticators import APIKeyAuthenticator
+from singer_sdk.exceptions import RetriableAPIError
 from singer_sdk.helpers.jsonpath import extract_jsonpath
 
 from tap_lastfm.property_stream import PropertyStream
@@ -76,3 +78,31 @@ class LastFMStream(PropertyStream):
         if context and "username" in context:
             params["user"] = context["username"]
         return params
+
+    # TODO: temporary workaround
+    # remove this after https://github.com/meltano/sdk/issues/1236
+    # is merged and SDK version bumped
+    def request_decorator(self, func: Callable) -> Callable:
+        """Instantiate a decorator for handling request failures.
+        Uses a wait generator defined in `backoff_wait_generator` to
+        determine backoff behaviour. Try limit is defined in
+        `backoff_max_tries`, and will trigger the event defined in
+        `backoff_handler` before retrying. Developers may override one or
+        all of these methods to provide custom backoff or retry handling.
+        Args:
+            func: Function to decorate.
+        Returns:
+            A decorated method.
+        """
+        decorator: Callable = backoff.on_exception(
+            self.backoff_wait_generator,
+            (
+                ConnectionResetError,
+                RetriableAPIError,
+                requests.exceptions.ReadTimeout,
+                requests.exceptions.ConnectionError,
+            ),
+            max_tries=self.backoff_max_tries,
+            on_backoff=self.backoff_handler,
+        )(func)
+        return decorator

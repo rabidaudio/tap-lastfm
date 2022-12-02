@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "tap-lastfm"
-version = "0.1.0"
+version = "0.1.1"
 description = "`tap-lastfm` is a Singer tap for Last.FM, built with the Meltano SDK for Singer Taps."
 authors = ["Charles Julian Knight <charles@rabidaudio.com>"]
 keywords = [
